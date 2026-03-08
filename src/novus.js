@@ -1,153 +1,132 @@
+import { findCategoryById, flattenNestedCategories } from './catalog-utils.js';
+
 const ZAKAZ_BASE = 'https://stores-api.zakaz.ua';
-// Дефолтный магазин Новус — SkyMall Kyiv
 const DEFAULT_STORE_ID = '482010105';
+const NOVUS_HEADERS = {
+  Accept: 'application/json',
+  'User-Agent': 'Mozilla/5.0',
+  'Accept-Language': 'uk',
+};
+
+async function fetchNovusCategoriesTree(storeId = DEFAULT_STORE_ID) {
+  const resp = await fetch(`${ZAKAZ_BASE}/stores/${storeId}/categories/`, {
+    headers: NOVUS_HEADERS,
+  });
+
+  if (!resp.ok) {
+    throw new Error(`Novus categories API error: ${resp.status}`);
+  }
+
+  const data = await resp.json();
+  return Array.isArray(data) ? data : [];
+}
 
 export async function getNovusCategories(storeId = DEFAULT_STORE_ID) {
-    const resp = await fetch(`${ZAKAZ_BASE}/stores/${storeId}/categories/`, {
-        headers: {
-            'Accept': 'application/json',
-            'User-Agent': 'Mozilla/5.0',
-            'Accept-Language': 'uk',
-        }
-    });
-
-    if (!resp.ok) {
-        throw new Error(`Novus categories API error: ${resp.status}`);
-    }
-
-    const data = await resp.json();
-
-    // Возвращаем плоский список: родительские + дочерние
-    const categories = [];
-    for (const cat of data) {
-        categories.push({
-            id: cat.id,
-            slug: cat.slug || cat.id,
-            title: cat.title.trim(),
-            count: cat.count,
-            parentId: cat.parent_id,
-        });
-        if (cat.children) {
-            for (const child of cat.children) {
-                categories.push({
-                    id: child.id,
-                    slug: child.slug || child.id,
-                    title: `  └ ${child.title.trim()}`,
-                    count: child.count,
-                    parentId: child.parent_id,
-                });
-            }
-        }
-    }
-    return categories;
+  const data = await fetchNovusCategoriesTree(storeId);
+  return flattenNestedCategories(data);
 }
 
 export async function getNovusProducts(categoryIdOrSlug, storeId = DEFAULT_STORE_ID) {
-    // Если передан ID - получаем slug и название из категорий
-    let categorySlug = categoryIdOrSlug;
-    let categoryName = '';
-    if (categoryIdOrSlug && isNaN(parseInt(categoryIdOrSlug))) {
-        // Это уже slug
-    } else if (categoryIdOrSlug) {
-        // Получаем categories чтобы найти slug и название
-        try {
-            const catsResp = await fetch(`${ZAKAZ_BASE}/stores/${storeId}/categories/`, {
-                headers: { 'Accept': 'application/json', 'User-Agent': 'Mozilla/5.0', 'Accept-Language': 'uk' }
-            });
-            const catsData = await catsResp.json();
-            for (const cat of catsData) {
-                if (String(cat.id) === String(categoryIdOrSlug)) {
-                    categorySlug = cat.slug || cat.id;
-                    categoryName = cat.title;
-                    break;
-                }
-                if (cat.children) {
-                    for (const child of cat.children) {
-                        if (String(child.id) === String(categoryIdOrSlug)) {
-                            categorySlug = child.slug || child.id;
-                            categoryName = child.title;
-                            break;
-                        }
-                    }
-                }
-            }
-        } catch (e) { }
+  let categorySlug = categoryIdOrSlug;
+  let categoryName = '';
+
+  if (categoryIdOrSlug) {
+    try {
+      const categories = await fetchNovusCategoriesTree(storeId);
+      const category = findCategoryById(categories, categoryIdOrSlug);
+
+      if (category) {
+        categorySlug = category.slug || category.id;
+        categoryName = String(category.title || '').trim();
+      }
+    } catch {
+      // If category metadata lookup fails, we still try the products endpoint directly.
+    }
+  }
+
+  const products = [];
+  let page = 1;
+  let hasMore = true;
+
+  while (hasMore) {
+    const resp = await fetch(
+      `${ZAKAZ_BASE}/stores/${storeId}/categories/${categorySlug}/products/?page=${page}`,
+      { headers: NOVUS_HEADERS }
+    );
+
+    if (!resp.ok) {
+      const text = await resp.text();
+      throw new Error(`Novus products API error: ${resp.status} - ${text.substring(0, 200)}`);
     }
 
-    const products = [];
-    let page = 1;
-    let hasMore = true;
+    const data = await resp.json();
+    const results = Array.isArray(data?.results)
+      ? data.results
+      : Array.isArray(data)
+        ? data
+        : [];
 
-    while (hasMore) {
-        const resp = await fetch(
-            `${ZAKAZ_BASE}/stores/${storeId}/categories/${categorySlug}/products/?page=${page}`,
-            { headers: { 'Accept': 'application/json', 'User-Agent': 'Mozilla/5.0', 'Accept-Language': 'uk' } }
-        );
-
-        if (!resp.ok) break;
-
-        const data = await resp.json();
-        const results = data.results || data;
-
-        if (!Array.isArray(results) || results.length === 0) {
-            hasMore = false;
-            break;
-        }
-
-        // Каждый результат содержит EAN и детали товара
-        for (const item of results) {
-            products.push(normalizeNovusProduct(item, categoryName));
-        }
-
-        // Проверяем есть ли следующая страница
-        if (data.next) {
-            page++;
-        } else {
-            hasMore = false;
-        }
+    if (results.length === 0) {
+      break;
     }
 
-    return {
-        total: products.length,
-        products
-    };
+    for (const item of results) {
+      products.push(normalizeNovusProduct(item, categoryName));
+    }
+
+    if (data?.next) {
+      page += 1;
+    } else {
+      hasMore = false;
+    }
+  }
+
+  return {
+    total: products.length,
+    products,
+  };
 }
 
-function normalizeNovusProduct(item, categorySlug) {
-    const price = item.price ? item.price / 100 : 0; // zakaz.ua хранит цены в копейках
-    const oldPrice = item.old_price ? item.old_price / 100 : null;
-    let discount = null;
+function normalizeNovusProduct(item, categoryName) {
+  const price = item?.price ? Number(item.price) / 100 : 0;
+  const oldPrice = item?.old_price ? Number(item.old_price) / 100 : null;
+  let discount = null;
 
-    if (oldPrice && oldPrice > price) {
-        discount = Math.round(((oldPrice - price) / oldPrice) * 100);
-    } else if (item.discount && item.discount.value) {
-        discount = item.discount.value;
-    }
+  if (oldPrice && oldPrice > price) {
+    discount = Math.round(((oldPrice - price) / oldPrice) * 100);
+  } else if (item?.discount?.value) {
+    discount = Number(item.discount.value) || null;
+  }
 
-    const ean = item.ean || item.id || '';
-    const name = item.title || item.name || 'Без назви';
+  const name = String(item?.title ?? item?.name ?? 'Без назви').trim();
+  let unit = item?.unit || '—';
 
-    let unit = item.unit || '—';
-    if (unit === 'pcs') unit = 'шт';
-    else if (unit === 'kg') unit = 'кг';
+  if (unit === 'pcs') unit = 'шт';
+  else if (unit === 'kg') unit = 'кг';
 
-    if (item.weight) {
-        if (item.weight >= 1000) unit = (item.weight / 1000) + ' кг';
-        else unit = item.weight + ' г';
-    } else if (item.volume) {
-        if (item.volume >= 1000) unit = (item.volume / 1000) + ' л';
-        else unit = item.volume + ' мл';
-    }
+  if (item?.weight) {
+    unit = item.weight >= 1000 ? `${item.weight / 1000} кг` : `${item.weight} г`;
+  } else if (item?.volume) {
+    unit = item.volume >= 1000 ? `${item.volume / 1000} л` : `${item.volume} мл`;
+  }
 
-    return {
-        store: 'Новус',
-        name: name,
-        category: categorySlug || '',
-        price: price,
-        oldPrice: oldPrice,
-        discount: discount,
-        unit: unit,
-        url: `https://novus.zakaz.ua/uk/search/?q=${encodeURIComponent(name)}`,
-        image: item.img ? item.img.s150x150 || item.img.s350x350 || null : null,
-    };
+  const itemUrl = item?.web_url || item?.url || '';
+  const absoluteUrl = itemUrl
+    ? itemUrl.startsWith('http')
+      ? itemUrl
+      : `https://novus.zakaz.ua${itemUrl}`
+    : `https://novus.zakaz.ua/uk/search/?q=${encodeURIComponent(name)}`;
+
+  return {
+    id: item?.ean || item?.sku || item?.id || '',
+    store: 'Новус',
+    name,
+    category: categoryName || '',
+    price,
+    oldPrice,
+    discount,
+    unit,
+    url: absoluteUrl,
+    image: item?.img ? item.img.s150x150 || item.img.s350x350 || null : null,
+  };
 }
