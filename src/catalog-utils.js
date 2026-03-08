@@ -29,6 +29,8 @@ function compareCategories(a, b) {
 
 export function flattenParentCategories(categories) {
   const list = Array.isArray(categories) ? categories : [];
+  // Some providers return a flat category list with parent ids instead of a
+  // ready-made nested tree, so we reconstruct the traversal order first.
   const knownIds = new Set(
     list
       .map(category => category?.id)
@@ -123,6 +125,8 @@ export function findCategoryById(categories, categoryId) {
   if (!categoryId) return null;
 
   const expectedId = String(categoryId);
+  // Breadth-first traversal keeps this helper safe for both shallow and deeply
+  // nested provider trees.
   const queue = Array.isArray(categories) ? [...categories] : [];
 
   while (queue.length > 0) {
@@ -164,6 +168,8 @@ export function mergeProductResults(results) {
     for (const product of products) {
       const key = getStableProductKey(product);
 
+      // Deduplicate only by a stable provider id. Name-based matching would
+      // incorrectly merge different products with similar titles.
       if (key && seenKeys.has(key)) {
         continue;
       }

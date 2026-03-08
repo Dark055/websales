@@ -700,6 +700,8 @@ export const HTML_PAGE = `<!DOCTYPE html>
   <div class="status-bar" id="statusBar">Оберіть магазин та категорію.</div>
 
   <script>
+    // The Worker serves this page as a static HTML string, so all browser-side
+    // state management lives inside this embedded script.
     const storeBtn = document.getElementById('storeBtn');
     const storeDropdown = document.getElementById('storeDropdown');
     const categoryBtn = document.getElementById('categoryBtn');
@@ -725,9 +727,13 @@ export const HTML_PAGE = `<!DOCTYPE html>
       fora: 'Фора'
     };
 
+    // allProducts keeps the merged API payload, while displayProducts holds
+    // the current filtered and sorted slice rendered in the table.
     let allProducts = [];
     let displayProducts = [];
     let currentSort = { key: null, dir: 1 };
+    // Incrementing request ids lets us ignore stale category responses when
+    // the user quickly changes the selected stores.
     let currentCategoryFetchId = 0;
     let lastRawProductCount = 0;
     let lastLoadErrors = [];
@@ -1048,6 +1054,8 @@ export const HTML_PAGE = `<!DOCTYPE html>
     }
 
     async function loadCategoriesForStores(stores) {
+      // Categories are loaded in parallel per store, but rendered in grouped
+      // sections so users can still see where each option came from.
       const fetchId = ++currentCategoryFetchId;
 
       categoryList.innerHTML = '';
@@ -1155,6 +1163,8 @@ export const HTML_PAGE = `<!DOCTYPE html>
     }
 
     async function loadProducts() {
+      // Product payloads are fetched store-by-store and merged client-side
+      // because each upstream provider uses its own API contract.
       const stores = getSelectedStores();
       const categoriesParam = getSelectedCategories();
 
@@ -1256,6 +1266,8 @@ export const HTML_PAGE = `<!DOCTYPE html>
     }
 
     function doSearch() {
+      // Once products are loaded, filtering stays local so the UI remains
+      // responsive while the user tweaks search and price controls.
       const query = safeLower(searchInput.value.trim());
       const minPrice = toNumber(minPriceInput.value);
       const maxPrice = toNumber(maxPriceInput.value);

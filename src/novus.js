@@ -33,6 +33,8 @@ export async function getNovusProducts(categoryIdOrSlug, storeId = DEFAULT_STORE
   if (categoryIdOrSlug) {
     try {
       const categories = await fetchNovusCategoriesTree(storeId);
+      // The UI stores the selected category id, but Novus product requests are
+      // more reliable when we translate it back to the provider slug first.
       const category = findCategoryById(categories, categoryIdOrSlug);
 
       if (category) {

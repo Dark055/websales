@@ -53,7 +53,13 @@ export default {
       return new Response(null, { headers: corsHeaders });
     }
 
+    if (request.method !== 'GET') {
+      return json({ error: 'Method Not Allowed' }, corsHeaders, 405);
+    }
+
     try {
+      // Every provider is normalized to the same response format so the browser
+      // UI can stay store-agnostic.
       if (path === '/api/silpo/categories') {
         const data = await getSilpoCategories();
         return json(data, corsHeaders);
@@ -89,7 +95,11 @@ export default {
 
       if (path === '/' || path === '/index.html') {
         return new Response(HTML_PAGE, {
-          headers: { 'Content-Type': 'text/html; charset=utf-8' },
+          headers: {
+            'Content-Type': 'text/html; charset=utf-8',
+            'X-Content-Type-Options': 'nosniff',
+            'Referrer-Policy': 'strict-origin-when-cross-origin',
+          },
         });
       }
 

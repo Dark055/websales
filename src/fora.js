@@ -1,4 +1,4 @@
-import { flattenParentCategories } from './catalog-utils.js';
+import { findCategoryById, flattenParentCategories } from './catalog-utils.js';
 
 const FORA_API = 'https://api.catalog.ecom.fora.ua/api/2.0/exec/EcomCatalogGlobal';
 const FORA_FILIAL = 310;
@@ -44,7 +44,9 @@ export async function getForaProducts(categoryId) {
   if (categoryId) {
     try {
       const allCats = await fetchForaCategoryTree();
-      const category = allCats.find(cat => String(cat?.id) === String(categoryId));
+      // Fora returns the same nested shape, so we resolve labels through the
+      // shared tree helper instead of only checking the top level.
+      const category = findCategoryById(allCats, categoryId);
       if (category?.name) {
         categoryName = category.name;
       }
@@ -59,6 +61,7 @@ export async function getForaProducts(categoryId) {
   let total = null;
 
   while (true) {
+    // Fora paginates with inclusive ranges instead of a separate page index.
     const data = {
       deliveryType: 2,
       filialId: FORA_FILIAL,

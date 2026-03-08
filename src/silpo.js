@@ -1,4 +1,4 @@
-import { flattenParentCategories } from './catalog-utils.js';
+import { findCategoryById, flattenParentCategories } from './catalog-utils.js';
 
 const SILPO_API = 'https://api.catalog.ecom.silpo.ua/api/2.0/exec/EcomCatalogGlobal';
 const SILPO_HEADERS = {
@@ -43,7 +43,9 @@ export async function getSilpoProducts(categoryId) {
   if (categoryId) {
     try {
       const allCats = await fetchSilpoCategoryTree();
-      const category = allCats.find(cat => String(cat?.id) === String(categoryId));
+      // Nested Silpo categories are common, so a shallow lookup would drop the
+      // category label for child categories in the UI.
+      const category = findCategoryById(allCats, categoryId);
       if (category?.name) {
         categoryName = category.name;
       }
@@ -58,6 +60,7 @@ export async function getSilpoProducts(categoryId) {
   let total = null;
 
   while (true) {
+    // The API uses inclusive From/To ranges instead of classic page numbers.
     const data = {
       deliveryType: 'DeliveryHome',
       filialId: 2028,
