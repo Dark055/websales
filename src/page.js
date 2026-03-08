@@ -95,6 +95,18 @@ export const HTML_PAGE = `<!DOCTYPE html>
       width: 100%;
     }
 
+    .header__toggle {
+      display: none;
+      margin-left: auto;
+      padding: 10px 14px;
+    }
+
+    .header__toggle-icon {
+      width: 16px;
+      height: 16px;
+      transition: transform var(--duration-normal) var(--easing-out);
+    }
+
     .header__controls {
       display: flex;
       align-items: center;
@@ -547,6 +559,15 @@ export const HTML_PAGE = `<!DOCTYPE html>
     }
 
     @media (max-width: 768px) {
+      .header { gap: 12px; }
+      .header__top { align-items: flex-start; }
+      .header__toggle { display: inline-flex; align-self: flex-start; }
+      .header__search,
+      .filters-panel { width: 100%; }
+      .header--collapsed .header__controls,
+      .header--collapsed .header__search,
+      .header--collapsed .filters-panel { display: none; }
+      .header--collapsed .header__toggle-icon { transform: rotate(-180deg); }
       .header__controls { flex-direction: column; align-items: stretch; }
       .multiselect { max-width: 100%; }
       .header__search { margin-left: 0; width: 100%; }
@@ -598,6 +619,8 @@ export const HTML_PAGE = `<!DOCTYPE html>
       .table td.product-name {
         flex-direction: column;
         align-items: flex-start;
+        font-size: 16px;
+        font-weight: bold;
       }
       .table td.product-name::before {
         margin-bottom: 4px;
@@ -615,7 +638,17 @@ export const HTML_PAGE = `<!DOCTYPE html>
   <div class="header">
     <div class="header__top">
       <h1>WebSales</h1>
-      <div class="header__controls">
+      <button
+        id="headerToggle"
+        class="btn btn--secondary header__toggle"
+        type="button"
+        aria-expanded="true"
+        aria-controls="headerControls headerSearch headerFilters"
+      >
+        <span id="headerToggleLabel">Показати</span>
+        <svg class="header__toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+      <div id="headerControls" class="header__controls">
         <div class="multiselect">
           <button id="storeBtn" class="btn btn--secondary multiselect-btn">
             <span>-- Магазини --</span>
@@ -652,13 +685,13 @@ export const HTML_PAGE = `<!DOCTYPE html>
         <button id="btnFind" class="btn btn--primary" disabled>Знайти товари</button>
       </div>
 
-      <div class="header__search">
+      <div id="headerSearch" class="header__search">
         <input type="text" id="searchInput" class="input" placeholder="Пошук товару..." />
         <button id="btnSearch" class="btn btn--secondary">Пошук</button>
       </div>
     </div>
 
-    <div class="filters-panel">
+    <div id="headerFilters" class="filters-panel">
       <div class="filter-item">
         <label for="minPrice">Від: <span id="minPriceVal">0</span> ₴</label>
         <input type="range" id="minPrice" min="0" max="500" value="0" />
@@ -680,9 +713,6 @@ export const HTML_PAGE = `<!DOCTYPE html>
     <table class="table">
       <thead>
         <tr>
-          <th style="width: 48px;">
-            <input type="checkbox" class="checkbox-square" id="selectAllCb" title="Обрати всі" />
-          </th>
           <th data-key="store">Магазин <svg class="sort-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></th>
           <th data-key="name">Назва продукту <svg class="sort-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></th>
           <th data-key="category">Категорія <svg class="sort-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></th>
@@ -702,6 +732,12 @@ export const HTML_PAGE = `<!DOCTYPE html>
   <script>
     // The Worker serves this page as a static HTML string, so all browser-side
     // state management lives inside this embedded script.
+    const header = document.querySelector('.header');
+    const headerControls = document.getElementById('headerControls');
+    const headerSearch = document.getElementById('headerSearch');
+    const headerFilters = document.getElementById('headerFilters');
+    const headerToggle = document.getElementById('headerToggle');
+    const headerToggleLabel = document.getElementById('headerToggleLabel');
     const storeBtn = document.getElementById('storeBtn');
     const storeDropdown = document.getElementById('storeDropdown');
     const categoryBtn = document.getElementById('categoryBtn');
@@ -719,7 +755,6 @@ export const HTML_PAGE = `<!DOCTYPE html>
     const tableBody = document.getElementById('tableBody');
     const statusBar = document.getElementById('statusBar');
     const loader = document.getElementById('loader');
-    const selectAllCb = document.getElementById('selectAllCb');
 
     const STORE_LABELS = {
       silpo: 'Сільпо',
@@ -737,6 +772,33 @@ export const HTML_PAGE = `<!DOCTYPE html>
     let currentCategoryFetchId = 0;
     let lastRawProductCount = 0;
     let lastLoadErrors = [];
+
+    function syncHeaderCollapsedState() {
+      const isMobile = window.matchMedia('(max-width: 768px)').matches;
+
+      if (!isMobile) {
+        header.classList.remove('header--collapsed');
+      }
+
+      const isCollapsed = isMobile && header.classList.contains('header--collapsed');
+      headerToggleLabel.textContent = isCollapsed ? '\u041f\u043e\u043a\u0430\u0437\u0430\u0442\u0438' : '\u0421\u0445\u043e\u0432\u0430\u0442\u0438';
+      headerToggle.setAttribute('aria-expanded', String(!isCollapsed));
+      headerControls.hidden = isCollapsed;
+      headerSearch.hidden = isCollapsed;
+      headerFilters.hidden = isCollapsed;
+    }
+
+    headerToggle.addEventListener('click', function() {
+      if (!window.matchMedia('(max-width: 768px)').matches) {
+        return;
+      }
+
+      header.classList.toggle('header--collapsed');
+      syncHeaderCollapsedState();
+    });
+
+    window.addEventListener('resize', syncHeaderCollapsedState);
+    syncHeaderCollapsedState();
 
     storeBtn.addEventListener('click', function(e) {
       e.stopPropagation();
@@ -842,33 +904,6 @@ export const HTML_PAGE = `<!DOCTYPE html>
     });
     discountOnlyCb.addEventListener('change', doSearch);
 
-    tableBody.addEventListener('change', function(e) {
-      if (!e.target.classList.contains('row-checkbox')) {
-        return;
-      }
-
-      const row = e.target.closest('tr');
-      if (row) {
-        row.classList.toggle('selected', e.target.checked);
-      }
-      syncSelectAllState();
-    });
-
-    selectAllCb.addEventListener('change', function(e) {
-      const isChecked = e.target.checked;
-      const checkboxes = tableBody.querySelectorAll('.row-checkbox');
-
-      checkboxes.forEach(function(checkbox) {
-        checkbox.checked = isChecked;
-        const row = checkbox.closest('tr');
-        if (row) {
-          row.classList.toggle('selected', isChecked);
-        }
-      });
-
-      selectAllCb.indeterminate = false;
-    });
-
     resetPriceRange([]);
     updateStoreButtonText();
     updateCategoryButtonText();
@@ -932,26 +967,6 @@ export const HTML_PAGE = `<!DOCTYPE html>
 
     function hasActiveFilters() {
       return !!searchInput.value.trim() || toNumber(minPriceInput.value) > 0 || toNumber(maxPriceInput.value) < toNumber(maxPriceInput.max) || discountOnlyCb.checked;
-    }
-
-    function resetTableSelection() {
-      selectAllCb.checked = false;
-      selectAllCb.indeterminate = false;
-    }
-
-    function syncSelectAllState() {
-      const checkboxes = Array.from(tableBody.querySelectorAll('.row-checkbox'));
-      if (checkboxes.length === 0) {
-        resetTableSelection();
-        return;
-      }
-
-      const checkedCount = checkboxes.filter(function(checkbox) {
-        return checkbox.checked;
-      }).length;
-
-      selectAllCb.checked = checkedCount === checkboxes.length;
-      selectAllCb.indeterminate = checkedCount > 0 && checkedCount < checkboxes.length;
     }
 
     function updateStatusBar() {
@@ -1069,8 +1084,6 @@ export const HTML_PAGE = `<!DOCTYPE html>
       lastLoadErrors = [];
       tableBody.innerHTML = '';
       resetPriceRange([]);
-      resetTableSelection();
-
       if (!stores || stores.length === 0) {
         statusBar.textContent = 'Оберіть магазин(и) та категорію(ї).';
         return;
@@ -1184,8 +1197,6 @@ export const HTML_PAGE = `<!DOCTYPE html>
       displayProducts = [];
       lastRawProductCount = 0;
       lastLoadErrors = [];
-      resetTableSelection();
-
       try {
         const settlements = await Promise.allSettled(stores.map(async function(store) {
           const storeCategories = categoriesParam
@@ -1289,11 +1300,9 @@ export const HTML_PAGE = `<!DOCTYPE html>
 
     function renderProducts(products) {
       tableBody.innerHTML = '';
-      resetTableSelection();
-
       if (!products.length) {
         const emptyRow = document.createElement('tr');
-        emptyRow.innerHTML = '<td colspan="9" style="text-align:center;color:#6B7280;">Нічого не знайдено за поточними фільтрами.</td>';
+        emptyRow.innerHTML = '<td colspan="8" style="text-align:center;color:#6B7280;">Нічого не знайдено за поточними фільтрами.</td>';
         tableBody.appendChild(emptyRow);
         return;
       }
@@ -1304,7 +1313,6 @@ export const HTML_PAGE = `<!DOCTYPE html>
         const discountDisplay = product.discount != null ? Math.abs(toNumber(product.discount)) + '%' : '—';
 
         row.innerHTML =
-          '<td data-label="Вибір"><input type="checkbox" class="checkbox-square row-checkbox" /></td>' +
           '<td data-label="Магазин"><span class="badge badge--' + storeClass + '">' + esc(product.store) + '</span></td>' +
           '<td data-label="Назва" class="product-name">' + esc(product.name) + '</td>' +
           '<td data-label="Категорія">' + esc(product.category) + '</td>' +
@@ -1316,8 +1324,6 @@ export const HTML_PAGE = `<!DOCTYPE html>
 
         tableBody.appendChild(row);
       });
-
-      syncSelectAllState();
     }
 
     function formatPrice(value) {
@@ -1341,6 +1347,4 @@ export const HTML_PAGE = `<!DOCTYPE html>
   </script>
 </body>
 </html>`;
-
-
 
