@@ -1,5 +1,4 @@
 const ROOT_KEY = '__root__';
-const TREE_MARKER = '\u2514';
 
 function getNumericSortValue(value) {
   const numeric = Number(value);
@@ -8,11 +7,6 @@ function getNumericSortValue(value) {
 
 function getCategoryTitle(category) {
   return String(category?.name ?? category?.title ?? '').trim();
-}
-
-function buildIndentedTitle(title, depth) {
-  if (depth <= 0) return title;
-  return `${'  '.repeat(depth)}${TREE_MARKER} ${title}`;
 }
 
 function compareCategories(a, b) {
@@ -30,7 +24,7 @@ function compareCategories(a, b) {
 export function flattenParentCategories(categories) {
   const list = Array.isArray(categories) ? categories : [];
   // Some providers return a flat category list with parent ids instead of a
-  // ready-made nested tree, so we reconstruct the traversal order first.
+  // ready-made nested tree, so we group them first and keep only root entries.
   const knownIds = new Set(
     list
       .map(category => category?.id)
@@ -58,67 +52,53 @@ export function flattenParentCategories(categories) {
     childrenByParent.get(parentKey).push(category);
   }
 
-  for (const bucket of childrenByParent.values()) {
-    bucket.sort(compareCategories);
-  }
-
-  const flattened = [];
-
-  function visit(parentKey, depth) {
-    const children = childrenByParent.get(parentKey) || [];
-
-    for (const category of children) {
+  return (childrenByParent.get(ROOT_KEY) || [])
+    .sort(compareCategories)
+    .map(category => {
       const title = getCategoryTitle(category);
       const count = category?.itemsCount ?? category?.count ?? 0;
 
       if (!title || count === 0) {
-        visit(String(category?.id), depth);
-        continue;
+        return null;
       }
 
-      flattened.push({
+      return {
         id: category.id,
         slug: category.slug ?? category.id,
-        title: buildIndentedTitle(title, depth),
+        title,
         count,
         parentId: category?.parentId ?? category?.parent_id ?? null,
-      });
-
-      visit(String(category.id), depth + 1);
-    }
-  }
-
-  visit(ROOT_KEY, 0);
-
-  return flattened;
+      };
+    })
+    .filter(Boolean);
 }
 
 export function flattenNestedCategories(categories, depth = 0) {
-  const list = Array.isArray(categories) ? categories : [];
-  const flattened = [];
-
-  for (const category of [...list].sort(compareCategories)) {
-    const title = getCategoryTitle(category);
-    const count = category?.itemsCount ?? category?.count ?? 0;
-
-    if (title && count !== 0) {
-      flattened.push({
-        id: category.id,
-        slug: category.slug ?? category.id,
-        title: buildIndentedTitle(title, depth),
-        count,
-        parentId: category?.parentId ?? category?.parent_id ?? null,
-      });
-    }
-
-    const nextDepth = title && count !== 0 ? depth + 1 : depth;
-    const children = flattenNestedCategories(category?.children || [], nextDepth);
-    if (children.length > 0) {
-      flattened.push(...children);
-    }
+  if (depth > 0) {
+    return [];
   }
 
-  return flattened;
+  const list = Array.isArray(categories) ? categories : [];
+
+  return [...list]
+    .sort(compareCategories)
+    .map(category => {
+      const title = getCategoryTitle(category);
+      const count = category?.itemsCount ?? category?.count ?? 0;
+
+      if (!title || count === 0) {
+        return null;
+      }
+
+      return {
+        id: category.id,
+        slug: category.slug ?? category.id,
+        title,
+        count,
+        parentId: category?.parentId ?? category?.parent_id ?? null,
+      };
+    })
+    .filter(Boolean);
 }
 
 export function findCategoryById(categories, categoryId) {
